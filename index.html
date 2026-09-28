@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Def-Defender: Space Vocabulary Shooter</title>
+    <style>
+        body {
+            background-color: #0b0b1a;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            text-align: center;
+            position: relative;
+        }
+
+        canvas {
+            border: 3px solid #00ffcc;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+            background: radial-gradient(circle, #121236 0%, #050510 100%);
+            display: block;
+        }
+
+        #ui-panel {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            width: 800px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .instructions {
+            margin-bottom: 10px;
+            color: #ffffff;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>DEF-DEFENDER</h1>
+        <div class="instructions">Use <b>LEFT / RIGHT Arrows</b> or <b>A / D</b> to move. Press <b>SPACEBAR</b> to shoot!</div>
+        <canvas id="gameCanvas" width="800" height="500"></canvas>
+        <div id="ui-panel">
+            <div>SHIELD: <span id="shield-display">100%</span></div>
+            <div>SCORE: <span id="score-display">0</span></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const shieldDisplay = document.getElementById('shield-display');
+        const scoreDisplay = document.getElementById('score-display');
+
+        // Vocabulary Database
+        const vocabulary = [
+            { word: "BAN", def: "To officially prohibit or forbid something" },
+            { word: "WELFARE", def: "Health, happiness, and good fortune of a person or group" },
+            { word: "CONTROVERSY", def: "A prolonged public disagreement or heated discussion" },
+            { word: "PREY", def: "An animal that is hunted and killed by another for food" },
+            { word: "REAR", def: "To bring up and care for children or animals until fully grown" },
+            { word: "SNIFF", def: "To draw up air audibly through the nose to smell something" },
+            { word: "DIGNITY", def: "The state or quality of being worthy of honor or respect" },
+            { word: "INTACT", def: "Not damaged or impaired; kept whole" },
+            { word: "ASSEMBLE", def: "To fit together the separate component parts of something" },
+            { word: "MOUNT", def: "To climb up or attach onto something elevated" }
+        ];
+
+        let score = 0;
+        let shield = 100;
+        let gameOver = false;
+
+        let currentTargetIndex = 0;
+        let activeAliens = [];
+        let bullets = [];
+
+        const player = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height - 60,
+            width: 50,
+            height: 30,
+            speed: 6,
+            dx: 0
+        };
+
+        const keys = {};
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && !gameOver) {
+                shootBullet();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        function setupNewWave() {
+            currentTargetIndex = Math.floor(Math.random() * vocabulary.length);
+            const targetWord = vocabulary[currentTargetIndex].word;
+
+            // Pick 2 random incorrect distractor words
+            let pool = vocabulary.filter(v => v.word !== targetWord);
+            pool = pool.sort(() => 0.5 - Math.random()).slice(0, 2);
+
+            const waveWords = [
+                { word: targetWord, isCorrect: true },
+                { word: pool[0].word, isCorrect: false },
+                { word: pool[1].word, isCorrect: false }
+            ].sort(() => 0.5 - Math.random());
+
+            activeAliens = waveWords.map((item, index) => {
+                return {
+                    x: 150 + index * 220,
+                    y: 40,
+                    width: 140,
+                    height: 40,
+                    word: item.word,
+                    isCorrect: item.isCorrect,
+                    speed: 0.8
+                };
+            });
+        }
+
+        function shootBullet() {
+            bullets.push({
+                x: player.x + player.width / 2 - 3,
+                y: player.y,
+                width: 6,
+                height: 15,
+                speed: 8
+            });
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Player Movement
+            if (keys['ArrowLeft'] || keys['KeyA']) player.x -= player.speed;
+            if (keys['ArrowRight'] || keys['KeyD']) player.x += player.speed;
+
+            // Boundaries
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            // Update Bullets
+            bullets.forEach((bullet, bIndex) => {
+                bullet.y -= bullet.speed;
+                if (bullet.y < 0) bullets.splice(bIndex, 1);
+            });
+
+            // Update Aliens
+            let resetWave = false;
+            activeAliens.forEach((alien) => {
+                alien.y += alien.speed;
+
+                // Alien reached shield line
+                if (alien.y + alien.height >= player.y) {
+                    shield -= 15;
+                    resetWave = true;
+                }
+            });
+
+            if (resetWave) {
+                checkShield();
+                if (!gameOver) setupNewWave();
+                return;
+            }
+
+            // Bullet-Alien Collisions
+            bullets.forEach((bullet, bIndex) => {
+                activeAliens.forEach((alien, aIndex) => {
+                    if (
+                        bullet.x < alien.x + alien.width &&
+                        bullet.x + bullet.width > alien.x &&
+                        bullet.y < alien.y + alien.height &&
+                        bullet.y + bullet.height > alien.y
+                    ) {
+                        bullets.splice(bIndex, 1);
+
+                        if (alien.isCorrect) {
+                            score += 100;
+                            setupNewWave();
+                        } else {
+                            shield -= 20;
+                            activeAliens.splice(aIndex, 1);
+                            checkShield();
+                        }
+                    }
+                });
+            });
+
+            scoreDisplay.textContent = score;
+            shieldDisplay.textContent = Math.max(0, shield) + "%";
+        }
+
+        function checkShield() {
+            if (shield <= 0) {
+                shield = 0;
+                gameOver = true;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameOver) {
+                ctx.fillStyle = '#ff0055';
+                ctx.font = '36px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER - SHIELD DEPLETED', canvas.width / 2, canvas.height / 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '20px Courier New';
+                ctx.fillText('Refresh the page to play again!', canvas.width / 2, canvas.height / 2 + 50);
+                return;
+            }
+
+            // Draw Target Definition HUD on Spaceship Shield
+            ctx.fillStyle = 'rgba(0, 255, 204, 0.1)';
+            ctx.fillRect(10, canvas.height - 110, canvas.width - 20, 45);
+            ctx.strokeStyle = '#00ffcc';
+            ctx.strokeRect(10, canvas.height - 110, canvas.width - 20, 45);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '15px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(`TARGET DEF: "${vocabulary[currentTargetIndex].def}"`, canvas.width / 2, canvas.height - 82);
+
+            // Draw Player Ship
+            ctx.fillStyle = '#00ffcc';
+            ctx.beginPath();
+            ctx.moveTo(player.x + player.width / 2, player.y);
+            ctx.lineTo(player.x + player.width, player.y + player.height);
+            ctx.lineTo(player.x, player.y + player.height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw Bullets
+            ctx.fillStyle = '#ffea00';
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+
+            // Draw Aliens
+            activeAliens.forEach(alien => {
+                ctx.fillStyle = '#ff0055';
+                ctx.fillRect(alien.x, alien.y, alien.width, alien.height);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText(alien.word, alien.x + alien.width / 2, alien.y + 25);
+            });
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        setupNewWave();
+        loop();
+    </script>
+</body>
+</html>
